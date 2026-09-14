@@ -334,6 +334,24 @@ const parityCases: OpenAiCompatibleAdapterParityCase[] = [
     })
   },
   {
+    id: 'apikeyfun-claude-stable-prompt-cache-key',
+    input: {
+      api: createProviderRuntimeTestProvider({
+        baseUrl: 'https://api.apikey.fun/v1',
+        path: '/chat/completions',
+        model: 'claude-sonnet-4-6',
+        capabilities: { images: true, streaming: true, thinking: false }
+      }),
+      context: createProviderRuntimeTestContext({ withTools: false }),
+      sessionId: 'conversation-apikeyfun-1',
+      advanced: createProviderRuntimeAdvanced()
+    },
+    verify(request) {
+      expect(request.body.prompt_cache_key).toBe('conversation-apikeyfun-1');
+      expect(request.body.session_id).toBeUndefined();
+    }
+  },
+  {
     id: 'siliconflow-tool-calls-disable-streaming',
     input: {
       api: createProviderRuntimeTestProvider({

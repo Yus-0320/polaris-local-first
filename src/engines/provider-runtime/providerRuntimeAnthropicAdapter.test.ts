@@ -194,6 +194,28 @@ const parityCases: AnthropicAdapterParityCase[] = [
     })
   },
   {
+    id: 'apikeyfun-anthropic-conversation-cache-breakpoints',
+    input: {
+      api: createProviderRuntimeTestProvider({
+        protocol: 'anthropic-messages',
+        baseUrl: 'https://api.apikey.fun/v1',
+        path: '/messages',
+        model: 'claude-sonnet-4-6',
+        capabilities: { images: true, streaming: true, thinking: false }
+      }),
+      context: createProviderRuntimeTestContext({ withTools: false }),
+      advanced: createProviderRuntimeAdvanced({ maxTokens: '128' })
+    },
+    verify(request) {
+      expect(request.body.cache_control).toBeUndefined();
+      const messages = readArray(request.body.messages);
+      const cachedTail = messages.slice(-2).filter((message) =>
+        readArray(readObject(message).content).some((block) => readObject(block).cache_control !== undefined)
+      );
+      expect(cachedTail.length).toBeGreaterThan(0);
+    }
+  },
+  {
     id: 'anthropic-packy-bearer-auth',
     input: {
       api: createProviderRuntimeTestProvider({

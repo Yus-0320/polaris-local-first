@@ -15,6 +15,7 @@ import { parseAnthropicMessagesStreamEvents } from './providerRuntimeStreamEvent
 import { extractAnthropicReply } from './providerRuntimeResponsePayload';
 import { setConnectionTestOutputTokenField } from './providerRuntimeConnectionTest';
 import { resolveOpenRouterSessionId } from './providerRuntimeOpenRouterSession';
+import { parseProviderHost } from './internal/providerMatching';
 import {
   canonicalProviderCapabilitiesFromContract,
   resolveProviderCapability
@@ -181,6 +182,31 @@ function buildAnthropicMessages(context: ProviderRuntimeRequestInput['context'])
   return messages;
 }
 
+function applyAnthropicConversationCacheBreakpoints(
+  messages: Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }>
+) {
+  const targetIndexes = new Set<number>();
+  for (let index = messages.length - 1; index >= 0 && targetIndexes.size < 2; index -= 1) {
+    const message = messages[index];
+    if (!message) continue;
+    if (normalizeAnthropicBlocks(message.content).some((block) => block.type === 'text' && block.text.trim())) {
+      targetIndexes.add(index);
+    }
+  }
+
+  return messages.map((message, index) => {
+    if (!targetIndexes.has(index)) return message;
+    const blocks = normalizeAnthropicBlocks(message.content).map((block) => ({ ...block }));
+    for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
+      const block = blocks[blockIndex];
+      if (block?.type !== 'text' || !block.text.trim()) continue;
+      blocks[blockIndex] = { ...block, cache_control: { type: 'ephemeral' } };
+      break;
+    }
+    return { ...message, content: blocks };
+  });
+}
+
 function resolveAnthropicSystemCacheControlIndexes(
   context: ProviderRuntimeRequestInput['context'],
   systemMessages: AnthropicSystemMessage[]
@@ -282,17 +308,21 @@ export function buildAnthropicRequest(input: ProviderRuntimeRequestInput) {
 
   const system = buildAnthropicSystemContent(context);
   const anthropicMessages = buildAnthropicMessages(context);
+  const host = parseProviderHost(api.baseUrl);
+  const requestMessages = host === 'api.apikey.fun'
+    ? applyAnthropicConversationCacheBreakpoints(anthropicMessages)
+    : anthropicMessages;
 
-  if (anthropicMessages.length === 0) {
+  if (requestMessages.length === 0) {
     throw new Error('field messages is required（当前请求没有可发送的对话消息，Anthropic /messages 至少需要一条 user 或 assistant 消息。）');
   }
 
   const body: Record<string, unknown> = {
     model,
     max_tokens: maxTokens ?? DEFAULT_ANTHROPIC_MAX_TOKENS,
-    messages: anthropicMessages
+    messages: requestMessages
   };
-  if (providerCapability.cache.sendsTopLevelCacheControl) {
+  if (providerCapability.cache.sendsTopLevelCacheControl && host !== 'api.apikey.fun') {
     body.cache_control = { type: 'ephemeral' };
   }
   const openRouterSessionId = resolveOpenRouterSessionId(api.baseUrl, sessionId);

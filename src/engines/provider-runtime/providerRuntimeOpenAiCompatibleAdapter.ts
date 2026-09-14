@@ -478,6 +478,9 @@ export function buildOpenAiCompatibleRequest(input: ProviderRuntimeRequestInput)
     model,
     messages: orderedMessages
   };
+  if (parseProviderHost(api.baseUrl) === 'api.apikey.fun' && sessionId?.trim()) {
+    body.prompt_cache_key = sessionId.trim();
+  }
   const openRouterSessionId = resolveOpenRouterSessionId(api.baseUrl, sessionId);
   if (openRouterSessionId) {
     body.session_id = openRouterSessionId;
