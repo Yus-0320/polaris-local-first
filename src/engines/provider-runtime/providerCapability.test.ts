@@ -104,6 +104,24 @@ describe('resolveProviderCapability', () => {
     expect(capability.context.omitVolatileSystemMessages).toBe(false);
   });
 
+  it('preserves conventional system-prefix ordering for custom OpenAI-compatible automatic cache routes', () => {
+    const capability = resolveProviderCapability(createProviderRuntimeTestProvider({
+      baseUrl: 'https://provider.example.com/v1',
+      path: '/chat/completions',
+      model: 'claude-sonnet-4-5',
+      capabilities: {
+        images: true,
+        streaming: true,
+        thinking: false
+      }
+    }));
+
+    expect(capability.route.kind).toBe('custom-direct');
+    expect(capability.cache.mode).toBe('automatic-or-unknown');
+    expect(capability.context.deferVolatileSystemMessages).toBe(false);
+    expect(capability.context.omitVolatileSystemMessages).toBe(false);
+  });
+
   it('uses portable explicit cache controls without top-level auto caching for OpenRouter Claude', () => {
     const capability = resolveProviderCapability(createProviderRuntimeTestProvider({
       baseUrl: 'https://openrouter.ai/api/v1',

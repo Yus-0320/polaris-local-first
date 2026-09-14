@@ -535,7 +535,12 @@ export function resolveProviderCapability(
     },
     context: {
       collapseSystemMessages: profile.collapseSystemMessages,
-      deferVolatileSystemMessages: protocolShape.cacheMode === 'automatic-or-unknown' || openAiCompatibleCacheControl,
+      deferVolatileSystemMessages:
+        openAiCompatibleCacheControl
+        || (
+          protocolShape.cacheMode === 'automatic-or-unknown'
+          && !(protocol === 'openai-completions' && profile.routeKind === 'custom-direct')
+        ),
       omitVolatileSystemMessages: isDeepSeekHost(host)
     },
     promptInjections: isMimoDirectExecutionSensitiveModel(runtimeProvider.model)
