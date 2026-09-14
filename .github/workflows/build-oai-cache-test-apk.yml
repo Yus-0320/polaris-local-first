@@ -20,58 +20,17 @@ jobs:
         with:
           ref: fix/oai-prompt-cache-order
 
-      - name: Patch APIKEY.FUN cache compatibility diagnostics
+      - name: Patch APIKEY.FUN cache-key and Anthropic message breakpoints
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          # Keep the APIKEY.FUN Claude OpenAI-compatible route on explicit cache controls.
-          source = Path('src/engines/provider-runtime/providerCapability.ts')
-          text = source.read_text()
-          old_order = "\n".join([
-              "      deferVolatileSystemMessages:",
-              "        openAiCompatibleCacheControl",
-              "        || (",
-              "          protocolShape.cacheMode === 'automatic-or-unknown'",
-              "          && !(protocol === 'openai-completions' && profile.routeKind === 'custom-direct')",
-              "        ),",
-          ])
-          new_order = "\n".join([
-              "      deferVolatileSystemMessages:",
-              "        openAiCompatibleCacheControl",
-              "        || (",
-              "          protocolShape.cacheMode === 'automatic-or-unknown'",
-              "          && !(",
-              "            protocol === 'openai-completions'",
-              "            && profile.routeKind === 'custom-direct'",
-              "            && !isDeepSeekHost(host)",
-              "          )",
-              "        ),",
-          ])
-          if old_order in text:
-              text = text.replace(old_order, new_order, 1)
-          old_cache = "  const openAiCompatibleCacheControl = isOpenRouterAnthropicClaudeCacheRoute(runtimeProvider, protocol, host);"
-          new_cache = "\n".join([
-              "  const openAiCompatibleCacheControl =",
-              "    isOpenRouterAnthropicClaudeCacheRoute(runtimeProvider, protocol, host)",
-              "    || (",
-              "      protocol === 'openai-completions'",
-              "      && host === 'api.apikey.fun'",
-              "      && isClaudeModel(runtimeProvider.model)",
-              "    );",
-          ])
-          if old_cache in text:
-              text = text.replace(old_cache, new_cache, 1)
-          elif new_cache not in text:
-              raise SystemExit('APIKEY.FUN cache-control patch target not found')
-          source.write_text(text)
-
-          # OAI: mirror OpenCode setCacheKey behavior with a stable conversation cache key.
+          # OpenAI-compatible: send a stable cache key for APIKEY.FUN.
           source = Path('src/engines/provider-runtime/providerRuntimeOpenAiCompatibleAdapter.ts')
           text = source.read_text()
-          old = """  const openRouterSessionId = resolveOpenRouterSessionId(api.baseUrl, sessionId);\n  if (openRouterSessionId) {\n    body.session_id = openRouterSessionId;\n  }"""
-          new = """  if (parseProviderHost(api.baseUrl) === 'api.apikey.fun' && sessionId?.trim()) {\n    body.prompt_cache_key = sessionId.trim();\n  }\n  const openRouterSessionId = resolveOpenRouterSessionId(api.baseUrl, sessionId);\n  if (openRouterSessionId) {\n    body.session_id = openRouterSessionId;\n  }"""
+          old = "  const openRouterSessionId = resolveOpenRouterSessionId(api.baseUrl, sessionId);\n  if (openRouterSessionId) {\n    body.session_id = openRouterSessionId;\n  }"
+          new = "  if (parseProviderHost(api.baseUrl) === 'api.apikey.fun' && sessionId?.trim()) {\n    body.prompt_cache_key = sessionId.trim();\n  }\n  const openRouterSessionId = resolveOpenRouterSessionId(api.baseUrl, sessionId);\n  if (openRouterSessionId) {\n    body.session_id = openRouterSessionId;\n  }"
           if old in text:
               text = text.replace(old, new, 1)
           elif new not in text:
@@ -79,18 +38,16 @@ jobs:
           source.write_text(text)
 
           test = Path('src/engines/provider-runtime/providerRuntimeOpenAiCompatibleAdapter.test.ts')
-          test_text = test.read_text()
+          text = test.read_text()
           marker = "  {\n    id: 'siliconflow-tool-calls-disable-streaming',"
-          addition = """  {\n    id: 'apikeyfun-claude-stable-prompt-cache-key',\n    input: {\n      api: createProviderRuntimeTestProvider({\n        baseUrl: 'https://api.apikey.fun/v1',\n        path: '/chat/completions',\n        model: 'claude-sonnet-4-6',\n        capabilities: {\n          images: true,\n          streaming: true,\n          thinking: false\n        }\n      }),\n      context: createProviderRuntimeTestContext({ withTools: false }),\n      sessionId: 'conversation-apikeyfun-1',\n      advanced: createProviderRuntimeAdvanced()\n    },\n    verify(request) {\n      expect(request.body.prompt_cache_key).toBe('conversation-apikeyfun-1');\n      expect(request.body.session_id).toBeUndefined();\n    }\n  },\n"""
-          if addition not in test_text:
-              if marker not in test_text:
+          addition = "  {\n    id: 'apikeyfun-claude-stable-prompt-cache-key',\n    input: {\n      api: createProviderRuntimeTestProvider({\n        baseUrl: 'https://api.apikey.fun/v1',\n        path: '/chat/completions',\n        model: 'claude-sonnet-4-6',\n        capabilities: { images: true, streaming: true, thinking: false }\n      }),\n      context: createProviderRuntimeTestContext({ withTools: false }),\n      sessionId: 'conversation-apikeyfun-1',\n      advanced: createProviderRuntimeAdvanced()\n    },\n    verify(request) {\n      expect(request.body.prompt_cache_key).toBe('conversation-apikeyfun-1');\n      expect(request.body.session_id).toBeUndefined();\n    }\n  },\n"
+          if addition not in text:
+              if marker not in text:
                   raise SystemExit('OAI adapter test insertion target not found')
-              test_text = test_text.replace(marker, addition + marker, 1)
-              test.write_text(test_text)
+              text = text.replace(marker, addition + marker, 1)
+              test.write_text(text)
 
-          # Anthropic: APIKEY.FUN behaves more like Operit/OpenCode when the latest
-          # conversation messages carry explicit cache breakpoints; avoid relying
-          # on the top-level cache_control extension for this third-party gateway.
+          # Anthropic: use explicit breakpoints on the latest two textual turns for APIKEY.FUN.
           source = Path('src/engines/provider-runtime/providerRuntimeAnthropicAdapter.ts')
           text = source.read_text()
           import_marker = "import { resolveOpenRouterSessionId } from './providerRuntimeOpenRouterSession';"
@@ -100,67 +57,63 @@ jobs:
                   raise SystemExit('Anthropic import insertion target not found')
               text = text.replace(import_marker, import_marker + "\n" + import_line, 1)
 
-          helper_marker = "\nfunction resolveAnthropicSystemCacheControlIndexes("
-          helper = r'''
-function applyAnthropicConversationCacheBreakpoints(
-  messages: Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }>
-) {
-  const targetIndexes = new Set<number>();
-  for (let index = messages.length - 1; index >= 0 && targetIndexes.size < 2; index -= 1) {
-    const message = messages[index];
-    if (!message) continue;
-    if (normalizeAnthropicBlocks(message.content).some((block) => block.type === 'text' && block.text.trim())) {
-      targetIndexes.add(index);
-    }
-  }
-
-  return messages.map((message, index) => {
-    if (!targetIndexes.has(index)) return message;
-    const blocks = normalizeAnthropicBlocks(message.content).map((block) => ({ ...block }));
-    for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
-      const block = blocks[blockIndex];
-      if (block?.type !== 'text' || !block.text.trim()) continue;
-      blocks[blockIndex] = {
-        ...block,
-        cache_control: { type: 'ephemeral' }
-      };
-      break;
-    }
-    return {
-      ...message,
-      content: blocks
-    };
-  });
-}
-'''
+          helper_lines = [
+              "function applyAnthropicConversationCacheBreakpoints(",
+              "  messages: Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }>",
+              ") {",
+              "  const targetIndexes = new Set<number>();",
+              "  for (let index = messages.length - 1; index >= 0 && targetIndexes.size < 2; index -= 1) {",
+              "    const message = messages[index];",
+              "    if (!message) continue;",
+              "    if (normalizeAnthropicBlocks(message.content).some((block) => block.type === 'text' && block.text.trim())) {",
+              "      targetIndexes.add(index);",
+              "    }",
+              "  }",
+              "",
+              "  return messages.map((message, index) => {",
+              "    if (!targetIndexes.has(index)) return message;",
+              "    const blocks = normalizeAnthropicBlocks(message.content).map((block) => ({ ...block }));",
+              "    for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {",
+              "      const block = blocks[blockIndex];",
+              "      if (block?.type !== 'text' || !block.text.trim()) continue;",
+              "      blocks[blockIndex] = { ...block, cache_control: { type: 'ephemeral' } };",
+              "      break;",
+              "    }",
+              "    return { ...message, content: blocks };",
+              "  });",
+              "}",
+              ""
+          ]
+          helper = "\n".join(helper_lines)
+          helper_marker = "function resolveAnthropicSystemCacheControlIndexes("
           if 'function applyAnthropicConversationCacheBreakpoints(' not in text:
               if helper_marker not in text:
                   raise SystemExit('Anthropic helper insertion target not found')
-              text = text.replace(helper_marker, "\n" + helper + helper_marker, 1)
+              text = text.replace(helper_marker, helper + "\n" + helper_marker, 1)
 
-          old_build = """  const system = buildAnthropicSystemContent(context);\n  const anthropicMessages = buildAnthropicMessages(context);\n\n  if (anthropicMessages.length === 0) {"""
-          new_build = """  const system = buildAnthropicSystemContent(context);\n  const anthropicMessages = buildAnthropicMessages(context);\n  const host = parseProviderHost(api.baseUrl);\n  const requestMessages = host === 'api.apikey.fun'\n    ? applyAnthropicConversationCacheBreakpoints(anthropicMessages)\n    : anthropicMessages;\n\n  if (requestMessages.length === 0) {"""
-          if old_build in text:
-              text = text.replace(old_build, new_build, 1)
-          elif new_build not in text:
-              raise SystemExit('Anthropic message cache patch target not found')
+          old = "  const system = buildAnthropicSystemContent(context);\n  const anthropicMessages = buildAnthropicMessages(context);\n\n  if (anthropicMessages.length === 0) {"
+          new = "  const system = buildAnthropicSystemContent(context);\n  const anthropicMessages = buildAnthropicMessages(context);\n  const host = parseProviderHost(api.baseUrl);\n  const requestMessages = host === 'api.apikey.fun'\n    ? applyAnthropicConversationCacheBreakpoints(anthropicMessages)\n    : anthropicMessages;\n\n  if (requestMessages.length === 0) {"
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit('Anthropic request-message patch target not found')
 
-          old_body = """    max_tokens: maxTokens ?? DEFAULT_ANTHROPIC_MAX_TOKENS,\n    messages: anthropicMessages\n  };\n  if (providerCapability.cache.sendsTopLevelCacheControl) {\n    body.cache_control = { type: 'ephemeral' };\n  }"""
-          new_body = """    max_tokens: maxTokens ?? DEFAULT_ANTHROPIC_MAX_TOKENS,\n    messages: requestMessages\n  };\n  if (providerCapability.cache.sendsTopLevelCacheControl && host !== 'api.apikey.fun') {\n    body.cache_control = { type: 'ephemeral' };\n  }"""
-          if old_body in text:
-              text = text.replace(old_body, new_body, 1)
-          elif new_body not in text:
-              raise SystemExit('Anthropic body cache patch target not found')
+          old = "    max_tokens: maxTokens ?? DEFAULT_ANTHROPIC_MAX_TOKENS,\n    messages: anthropicMessages\n  };\n  if (providerCapability.cache.sendsTopLevelCacheControl) {\n    body.cache_control = { type: 'ephemeral' };\n  }"
+          new = "    max_tokens: maxTokens ?? DEFAULT_ANTHROPIC_MAX_TOKENS,\n    messages: requestMessages\n  };\n  if (providerCapability.cache.sendsTopLevelCacheControl && host !== 'api.apikey.fun') {\n    body.cache_control = { type: 'ephemeral' };\n  }"
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit('Anthropic body patch target not found')
           source.write_text(text)
 
           test = Path('src/engines/provider-runtime/providerRuntimeAnthropicAdapter.test.ts')
-          test_text = test.read_text()
+          text = test.read_text()
           marker = "  {\n    id: 'anthropic-packy-bearer-auth',"
-          addition = """  {\n    id: 'apikeyfun-anthropic-conversation-cache-breakpoints',\n    input: {\n      api: createProviderRuntimeTestProvider({\n        protocol: 'anthropic-messages',\n        baseUrl: 'https://api.apikey.fun/v1',\n        path: '/messages',\n        model: 'claude-sonnet-4-6',\n        capabilities: {\n          images: true,\n          streaming: true,\n          thinking: false\n        }\n      }),\n      context: createProviderRuntimeTestContext({ withTools: false }),\n      advanced: createProviderRuntimeAdvanced({ maxTokens: '128' })\n    },\n    verify(request) {\n      expect(request.body.cache_control).toBeUndefined();\n      const messages = readArray(request.body.messages);\n      const cachedTail = messages.slice(-2).filter((message) =>\n        readArray(readObject(message).content).some((block) =>\n          readObject(block).cache_control !== undefined\n        )\n      );\n      expect(cachedTail.length).toBeGreaterThan(0);\n    }\n  },\n"""
-          if addition not in test_text:
-              if marker not in test_text:
+          addition = "  {\n    id: 'apikeyfun-anthropic-conversation-cache-breakpoints',\n    input: {\n      api: createProviderRuntimeTestProvider({\n        protocol: 'anthropic-messages',\n        baseUrl: 'https://api.apikey.fun/v1',\n        path: '/messages',\n        model: 'claude-sonnet-4-6',\n        capabilities: { images: true, streaming: true, thinking: false }\n      }),\n      context: createProviderRuntimeTestContext({ withTools: false }),\n      advanced: createProviderRuntimeAdvanced({ maxTokens: '128' })\n    },\n    verify(request) {\n      expect(request.body.cache_control).toBeUndefined();\n      const messages = readArray(request.body.messages);\n      const cachedTail = messages.slice(-2).filter((message) =>\n        readArray(readObject(message).content).some((block) => readObject(block).cache_control !== undefined)\n      );\n      expect(cachedTail.length).toBeGreaterThan(0);\n    }\n  },\n"
+          if addition not in text:
+              if marker not in text:
                   raise SystemExit('Anthropic adapter test insertion target not found')
-              test.write_text(test_text.replace(marker, addition + marker, 1))
+              test.write_text(text.replace(marker, addition + marker, 1))
           PY
 
       - name: Commit cache compatibility patch to test branch
@@ -172,12 +125,10 @@ function applyAnthropicConversationCacheBreakpoints(
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            src/engines/provider-runtime/providerCapability.ts \
-            src/engines/provider-runtime/providerRuntimeOpenAiCompatibleAdapter.ts \
-            src/engines/provider-runtime/providerRuntimeOpenAiCompatibleAdapter.test.ts \
-            src/engines/provider-runtime/providerRuntimeAnthropicAdapter.ts \
-            src/engines/provider-runtime/providerRuntimeAnthropicAdapter.test.ts
+          git add src/engines/provider-runtime/providerRuntimeOpenAiCompatibleAdapter.ts
+          git add src/engines/provider-runtime/providerRuntimeOpenAiCompatibleAdapter.test.ts
+          git add src/engines/provider-runtime/providerRuntimeAnthropicAdapter.ts
+          git add src/engines/provider-runtime/providerRuntimeAnthropicAdapter.test.ts
           git commit -m "test: align APIKEY.FUN cache key and conversation breakpoints [skip ci]"
           git push origin HEAD:fix/oai-prompt-cache-order
 
@@ -203,11 +154,7 @@ function applyAnthropicConversationCacheBreakpoints(
         run: npm ci
 
       - name: Run cache compatibility regression tests
-        run: >-
-          npx vitest run
-          src/engines/provider-runtime/providerCapability.test.ts
-          src/engines/provider-runtime/providerRuntimeOpenAiCompatibleAdapter.test.ts
-          src/engines/provider-runtime/providerRuntimeAnthropicAdapter.test.ts
+        run: npx vitest run src/engines/provider-runtime/providerCapability.test.ts src/engines/provider-runtime/providerRuntimeOpenAiCompatibleAdapter.test.ts src/engines/provider-runtime/providerRuntimeAnthropicAdapter.test.ts
 
       - name: Build Android debug APK
         run: npm run android:build-debug
