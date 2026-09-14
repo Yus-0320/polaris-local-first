@@ -539,7 +539,11 @@ export function resolveProviderCapability(
         openAiCompatibleCacheControl
         || (
           protocolShape.cacheMode === 'automatic-or-unknown'
-          && !(protocol === 'openai-completions' && profile.routeKind === 'custom-direct')
+          && !(
+            protocol === 'openai-completions'
+            && profile.routeKind === 'custom-direct'
+            && !isDeepSeekHost(host)
+          )
         ),
       omitVolatileSystemMessages: isDeepSeekHost(host)
     },
