@@ -20,7 +20,7 @@ jobs:
         with:
           ref: fix/oai-prompt-cache-order
 
-      - name: Apply narrow custom-OAI cache-order patch
+      - name: Refine custom-OAI cache-order patch
         shell: bash
         run: |
           python3 - <<'PY'
@@ -28,29 +28,39 @@ jobs:
 
           source = Path('src/engines/provider-runtime/providerCapability.ts')
           text = source.read_text()
-          old = "      deferVolatileSystemMessages: protocolShape.cacheMode === 'automatic-or-unknown' || openAiCompatibleCacheControl,"
-          new = """      deferVolatileSystemMessages:\n        openAiCompatibleCacheControl\n        || (\n          protocolShape.cacheMode === 'automatic-or-unknown'\n          && !(protocol === 'openai-completions' && profile.routeKind === 'custom-direct')\n        ),"""
-          if old not in text:
-              raise SystemExit('providerCapability.ts patch target not found')
-          source.write_text(text.replace(old, new, 1))
-
-          test = Path('src/engines/provider-runtime/providerCapability.test.ts')
-          test_text = test.read_text()
-          marker = "  it('uses portable explicit cache controls without top-level auto caching for OpenRouter Claude', () => {"
-          addition = """  it('preserves conventional system-prefix ordering for custom OpenAI-compatible automatic cache routes', () => {\n    const capability = resolveProviderCapability(createProviderRuntimeTestProvider({\n      baseUrl: 'https://provider.example.com/v1',\n      path: '/chat/completions',\n      model: 'claude-sonnet-4-5',\n      capabilities: {\n        images: true,\n        streaming: true,\n        thinking: false\n      }\n    }));\n\n    expect(capability.route.kind).toBe('custom-direct');\n    expect(capability.cache.mode).toBe('automatic-or-unknown');\n    expect(capability.context.deferVolatileSystemMessages).toBe(false);\n    expect(capability.context.omitVolatileSystemMessages).toBe(false);\n  });\n\n"""
-          if addition not in test_text:
-              if marker not in test_text:
-                  raise SystemExit('providerCapability.test.ts insertion target not found')
-              test.write_text(test_text.replace(marker, addition + marker, 1))
+          old = """      deferVolatileSystemMessages:
+        openAiCompatibleCacheControl
+        || (
+          protocolShape.cacheMode === 'automatic-or-unknown'
+          && !(protocol === 'openai-completions' && profile.routeKind === 'custom-direct')
+        ),"""
+          new = """      deferVolatileSystemMessages:
+        openAiCompatibleCacheControl
+        || (
+          protocolShape.cacheMode === 'automatic-or-unknown'
+          && !(
+            protocol === 'openai-completions'
+            && profile.routeKind === 'custom-direct'
+            && !isDeepSeekHost(host)
+          )
+        ),"""
+          if old in text:
+              source.write_text(text.replace(old, new, 1))
+          elif new not in text:
+              raise SystemExit('providerCapability.ts refinement target not found')
           PY
 
-      - name: Commit isolated patch to test branch
+      - name: Commit refined patch to test branch
         shell: bash
         run: |
+          if git diff --quiet; then
+            echo "Patch already refined"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/engines/provider-runtime/providerCapability.ts src/engines/provider-runtime/providerCapability.test.ts
-          git commit -m "fix: preserve prefix order for custom OAI cache [skip ci]"
+          git add src/engines/provider-runtime/providerCapability.ts
+          git commit -m "fix: preserve DeepSeek volatile context behavior [skip ci]"
           git push origin HEAD:fix/oai-prompt-cache-order
 
       - name: Setup Node
