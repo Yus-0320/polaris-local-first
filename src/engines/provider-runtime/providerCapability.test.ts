@@ -122,6 +122,28 @@ describe('resolveProviderCapability', () => {
     expect(capability.context.omitVolatileSystemMessages).toBe(false);
   });
 
+  it('uses explicit cache controls for APIKEY.FUN Claude chat completions', () => {
+    const capability = resolveProviderCapability(createProviderRuntimeTestProvider({
+      baseUrl: 'https://api.apikey.fun/v1',
+      path: '/chat/completions',
+      model: 'claude-sonnet-4-6',
+      capabilities: {
+        images: true,
+        streaming: true,
+        thinking: false
+      }
+    }));
+
+    expect(capability.cache).toEqual({
+      mode: 'explicit-cache-control',
+      promptCaching: true,
+      openAiCompatibleCacheControl: true,
+      sendsTopLevelCacheControl: false,
+      automaticMessageHistoryCache: false
+    });
+    expect(capability.context.deferVolatileSystemMessages).toBe(true);
+  });
+
   it('uses portable explicit cache controls without top-level auto caching for OpenRouter Claude', () => {
     const capability = resolveProviderCapability(createProviderRuntimeTestProvider({
       baseUrl: 'https://openrouter.ai/api/v1',

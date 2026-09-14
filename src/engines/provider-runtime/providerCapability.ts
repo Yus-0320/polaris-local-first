@@ -437,7 +437,13 @@ export function resolveProviderCapability(
     reasoningTransport,
     sendThinkingBudget: profile.sendThinkingBudget
   });
-  const openAiCompatibleCacheControl = isOpenRouterAnthropicClaudeCacheRoute(runtimeProvider, protocol, host);
+  const openAiCompatibleCacheControl =
+    isOpenRouterAnthropicClaudeCacheRoute(runtimeProvider, protocol, host)
+    || (
+      protocol === 'openai-completions'
+      && host === 'api.apikey.fun'
+      && isClaudeModel(runtimeProvider.model)
+    );
   const cacheMode: CanonicalProviderCacheMode = openAiCompatibleCacheControl
     ? 'explicit-cache-control'
     : protocolShape.cacheMode;
