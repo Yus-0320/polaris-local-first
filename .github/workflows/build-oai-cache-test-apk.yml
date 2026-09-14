@@ -28,22 +28,26 @@ jobs:
 
           source = Path('src/engines/provider-runtime/providerCapability.ts')
           text = source.read_text()
-          old = """      deferVolatileSystemMessages:
-        openAiCompatibleCacheControl
-        || (
-          protocolShape.cacheMode === 'automatic-or-unknown'
-          && !(protocol === 'openai-completions' && profile.routeKind === 'custom-direct')
-        ),"""
-          new = """      deferVolatileSystemMessages:
-        openAiCompatibleCacheControl
-        || (
-          protocolShape.cacheMode === 'automatic-or-unknown'
-          && !(
-            protocol === 'openai-completions'
-            && profile.routeKind === 'custom-direct'
-            && !isDeepSeekHost(host)
-          )
-        ),"""
+          old = "\n".join([
+              "      deferVolatileSystemMessages:",
+              "        openAiCompatibleCacheControl",
+              "        || (",
+              "          protocolShape.cacheMode === 'automatic-or-unknown'",
+              "          && !(protocol === 'openai-completions' && profile.routeKind === 'custom-direct')",
+              "        ),",
+          ])
+          new = "\n".join([
+              "      deferVolatileSystemMessages:",
+              "        openAiCompatibleCacheControl",
+              "        || (",
+              "          protocolShape.cacheMode === 'automatic-or-unknown'",
+              "          && !(",
+              "            protocol === 'openai-completions'",
+              "            && profile.routeKind === 'custom-direct'",
+              "            && !isDeepSeekHost(host)",
+              "          )",
+              "        ),",
+          ])
           if old in text:
               source.write_text(text.replace(old, new, 1))
           elif new not in text:
