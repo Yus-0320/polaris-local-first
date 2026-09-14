@@ -20,10 +20,19 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    signingConfigs {
+        cachetestDebug {
+            storeFile file('cachetest-debug.keystore')
+            storePassword 'android'
+            keyAlias 'cachetest'
+            keyPassword 'android'
+        }
+    }
     buildTypes {
         debug {
             applicationIdSuffix ".cachetest"
             versionNameSuffix "-cachetest"
+            signingConfig signingConfigs.cachetestDebug
         }
         release {
             minifyEnabled false
