@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   test-build:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -38,62 +37,13 @@ jobs:
           path: android/app/cachetest-debug.keystore
           key: polaris-cachetest-signing-v2
 
-      - name: Create signing key if this is the first v2 build
+      - name: Ensure deterministic signing key
         shell: bash
         run: |
           if [ ! -f android/app/cachetest-debug.keystore ]; then
-            keytool -genkeypair \
-              -keystore android/app/cachetest-debug.keystore \
-              -storepass android \
-              -alias cachetest \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Polaris Cache Test,O=Polaris,C=US"
+            keytool -genkeypair -keystore android/app/cachetest-debug.keystore -storepass android -alias cachetest -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Polaris Cache Test,O=Polaris,C=US"
           fi
-          echo "Signing certificate before build:"
-          keytool -list -v \
-            -keystore android/app/cachetest-debug.keystore \
-            -storepass android \
-            -alias cachetest | grep -E 'SHA256:|Alias name:'
-
-      - name: Pin debug build to deterministic signing key
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('android/app/build.gradle')
-          text = path.read_text()
-          signing = '''    signingConfigs {
-        cachetestDebug {
-            storeFile file('cachetest-debug.keystore')
-            storePassword 'android'
-            keyAlias 'cachetest'
-            keyPassword 'android'
-        }
-    }
-'''
-          if 'cachetestDebug {' not in text:
-              marker = '    buildTypes {'
-              if marker not in text:
-                  raise SystemExit('buildTypes marker not found')
-              text = text.replace(marker, signing + marker, 1)
-          old = '''        debug {
-            applicationIdSuffix ".cachetest"
-            versionNameSuffix "-cachetest"
-        }'''
-          new = '''        debug {
-            applicationIdSuffix ".cachetest"
-            versionNameSuffix "-cachetest"
-            signingConfig signingConfigs.cachetestDebug
-        }'''
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif new not in text:
-              raise SystemExit('debug buildType marker not found')
-          path.write_text(text)
-          PY
+          keytool -list -v -keystore android/app/cachetest-debug.keystore -storepass android -alias cachetest | grep -E 'SHA256:|Alias name:'
 
       - name: Install dependencies
         run: npm ci
