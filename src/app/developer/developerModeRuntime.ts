@@ -70,7 +70,8 @@ export function isDeveloperModeEnabled() {
   if (!storage) return false;
 
   try {
-    return storage.getItem(POLARIS_DEVELOPER_MODE_STORAGE_KEY) === '1';
+    const stored = storage.getItem(POLARIS_DEVELOPER_MODE_STORAGE_KEY);
+    return stored === null ? true : stored === '1';
   } catch {
     return false;
   }
