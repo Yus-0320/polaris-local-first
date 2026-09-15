@@ -58,7 +58,7 @@ jobs:
         shell: bash
         run: |
           APKSIGNER="${ANDROID_HOME}/build-tools/$(ls -1 ${ANDROID_HOME}/build-tools | sort -V | tail -1)/apksigner"
-          "$APKSIGNER" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk | grep -E 'Signer #1 certificate SHA-256 digest|Signer #1 certificate DN'
+          "$APKSIGNER" verify --verbose --print-certs android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
