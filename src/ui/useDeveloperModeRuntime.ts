@@ -27,6 +27,11 @@ export function useDeveloperModeRuntime() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    // Cache-test mobile builds should recover from accidentally closing a debug
+    // surface. Re-enable developer mode at app startup so /debug last remains
+    // usable without a hardware keyboard.
+    setDeveloperModeEnabled(true);
+
     window.__polarisDev = {
       isEnabled: isDeveloperModeEnabled,
       enable: () => setDeveloperModeEnabled(true),
