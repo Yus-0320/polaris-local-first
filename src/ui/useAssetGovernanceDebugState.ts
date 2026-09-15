@@ -29,7 +29,10 @@ const ASSET_GOVERNANCE_DEBUG_SYNC_EVENTS = [
 ] as const;
 
 function readDebugEnabled() {
-  return readDebugSurfaceEnabled({ developerMode: true, queryParams: ['debugAssets'] });
+  // Keep the cache-test mobile build focused on request debugging. Asset audit
+  // remains available explicitly through ?debugAssets=1, but enabling developer
+  // mode no longer opens a second overlay that blocks the request body on phone.
+  return readDebugSurfaceEnabled({ developerMode: false, queryParams: ['debugAssets'] });
 }
 
 export function useAssetGovernanceDebugState(): AssetGovernanceDebugState {
